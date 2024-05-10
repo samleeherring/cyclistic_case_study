@@ -42,8 +42,13 @@ colnames(summer_data)
 ## for checking which columns have the most NA values
 colSums(is.na(summer_data))
 
+## searching for duplicated/frequent values in applicable columns
+sum(duplicated(summer_data$ride_id))
+## I thought this column was for riders, not individual rides. At least there are no dups
+
 summer_data %>% 
-  select(started_at, start_station_name, start_station_id, ended_at, end_station_name, end_station_id) %>%
+  select(started_at, start_station_name, start_station_id, ended_at, end_station_name,
+         end_station_id) %>%
   arrange(started_at) %>%
   drop_na() # returns 73% of initial data
   # group_by(started_at, ended_at) %>%
@@ -117,7 +122,8 @@ q2_type <- summer_data %>%
 q2_type %>%
   ggplot(aes(x=rideable_type, y=ride_number, fill=member_casual)) +
   geom_col(position = 'dodge') +
-  scale_y_continuous(labels = seq(0, 700, 100), breaks = seq(0, 700000, 100000), expand = waiver()) +
+  scale_y_continuous(labels = seq(0, 700, 100), breaks = seq(0, 700000, 100000),
+                     expand = waiver()) +
   labs(
     x = NULL,
     y = 'Number of rides (x1,000)',
@@ -126,14 +132,67 @@ q2_type %>%
 ggsave('rough_plots/q2_ridership_bar_plot.png')
   
 ## df for finding most frequented stations by riders  
-# q2_lctn <- 
-  summer_data %>%
+q2_st_lctn <- summer_data %>%
   select(start_station_name, start_station_id, end_station_name, end_station_id) %>%
-    drop_na() 
-  
-  
-  
+  drop_na() %>%
+  add_count(start_station_name) %>% 
+  add_count(end_station_name) %>%
+  arrange(-n, -nn) %>%
+  distinct(start_station_name, n) %>%
+  top_n(n=20)
+q2_nd_lctn <- summer_data %>%
+  select(start_station_name, start_station_id, end_station_name, end_station_id) %>%
+  drop_na() %>%
+  add_count(start_station_name) %>% 
+  add_count(end_station_name) %>%
+  arrange(-n, -nn) %>%
+  distinct(end_station_name, nn) %>%
+  top_n(n=20)
 
-  
+q2_top_lctn <- bind_cols(q2_st_lctn, q2_nd_lctn) %>%
+  rename(st_count = n,
+         nd_count = nn)
+
+## df for finding the number & percentages of member vs casual riders
+q2_ridership <- summer_data %>%
+  group_by(member_casual) %>%
+  summarise(n=n()) %>%
+  mutate(percentage = n*100/sum(n)) %>%
+  rename(rider_type = member_casual,
+         rides = n) %>%
+  group_by(rider_type)
+
+q2_ridership %>%
+ggplot(aes(x="", y=percentage, fill=rider_type)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) +
+  theme_void() +
+  geom_text(aes(y = c(80, 30), label = rider_type), color = "white", size=6) +
+  scale_fill_brewer(palette="Set1")
+ggsave('rough_plots/ridership_distribution.png')
+
+## df for which rider type takes the longest rides (time x distance)
+q2_ride_length <- right_join(q2_stats, q2_dist_stats) %>%
+  select(member_casual, avg_drtn, max_drtn, avg_dist, max_dist)
+
+q2_ride_length %>%
+  ggplot(aes(x=member_casual, y=avg_drtn, fill=member_casual)) +
+  geom_col() +
+  labs(title = 'Average ride duration between user types',
+       x = NULL,
+       y = 'Duration (min)')
+ggsave('rough_plots/avg_ride_drtn.png')
+q2_ride_length %>%
+  ggplot(aes(x=member_casual, y=avg_dist, fill=member_casual)) +
+  geom_col() +
+  labs(title = 'Average ride distance between user types',
+       x = NULL,
+       y = 'Distance (km)')
+ggsave('rough_plots/avg_ride_dist.png')
+
+
+
+
+
   
   
