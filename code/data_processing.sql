@@ -10,7 +10,7 @@ Q4: oct-dec, 1,123,704 rows
 SELECT 
   *
 FROM 
-  `magnetic-energy-424103-m2.cyclistic_data.oct_23`
+  `cyclistic_data.oct_23`
 
 UNION ALL
 
@@ -79,4 +79,15 @@ FROM
 FROM 
   `cyclistic_data.annual_data`
 
+-- New columns to show trip duration, formatted & in seconds
+SELECT 
+  *,
+  FORMAT_TIMESTAMP("%T", TIMESTAMP_SECONDS(seconds)) as trip_duration,
   
+FROM
+  (
+  SELECT
+    *,
+    DATE_DIFF(ended_at, started_at, SECOND) AS seconds,
+  FROM `cyclistic_data.annual_data` 
+  )
