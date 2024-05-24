@@ -107,8 +107,9 @@ FROM
 DECLARE pi FLOAT64;
 SET pi = bqutil.fn.pi();
 */
--- There wasn't a pi() function in BigQuery which... I hope they fix that
--- Also added in distance column & removed columns used to calculate it
+/*
+There wasn't a pi() function in BigQuery which... I hope they fix that
+Also added in distance column & removed columns used to calculate it
 SELECT
   * EXCEPT (start_lat, start_lng, end_lat, end_lng, lat_rad_1, lng_rad_1, lat_rad_2, lng_rad_2),
   ROUND((6371 * ACOS((SIN(lat_rad_1)*SIN(lat_rad_2))+COS(lat_rad_1)
@@ -122,4 +123,31 @@ FROM (
     ROUND((end_lng * 2 * ACOS(-1) /360),3) AS lng_rad_2,
   FROM `cyclistic_data.q1_data`
 )
--- Something is wrong with the math here, the distance calculation is off
+Something is wrong with the math here, the distance calculation is off
+Ok had to abandon the trig approach and use legacy function combos instead
+*/
+
+-- Adding distance columnn to data frame
+SELECT
+  * EXCEPT(start_lng, start_lat, end_lng, end_lat),
+  ROUND(ST_DISTANCE(start_point, end_point)/1000, 2) AS distance
+FROM
+  (SELECT
+    *,
+    ST_GEOGPOINT(start_lng, start_lat) AS start_point,
+    ST_GEOGPOINT(end_lng, end_lat) AS end_point
+  FROM
+    `cyclistic_data.apr_23`
+  WHERE
+    end_lat <> 0)
+ORDER BY
+  end_station_name DESC -- places nulls at the end for easier verification
+
+-- Final query for initial processing: establishing workable data frames
+SELECT
+  ride_id, started_at, ended_at, day_of_week, ROUND(seconds/60,2) AS duration_min,
+  distance AS distance_km, start_station_name, end_station_name, member_casual
+FROM
+  `cyclistic_data.q1_data`
+ORDER BY
+  ride_id DESC
