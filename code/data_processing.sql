@@ -50,6 +50,16 @@ SELECT
 FROM
   `cyclistic_data.q4_data`;
 
+-- Checking for duplicates across all data (annual_data)
+SELECT *
+FROM (
+SELECT *,
+  row_number() over (partition by ride_id order by ride_id) as rn
+FROM `cyclistic_data.annual_data`
+ORDER BY ride_id) x
+WHERE x.rn > 1; 
+-- no dups
+
 -- Finding the geographical borders (lat/lon) of data
 -- Lat = (41.16 : 42.18) Lon =(-87.46 : -88.16)
 SELECT
@@ -91,3 +101,25 @@ FROM
     DATE_DIFF(ended_at, started_at, SECOND) AS seconds,
   FROM `cyclistic_data.annual_data` 
   )
+
+-- Converting all lat/lon fields into radians for ride distance data
+/*
+DECLARE pi FLOAT64;
+SET pi = bqutil.fn.pi();
+*/
+-- There wasn't a pi() function in BigQuery which... I hope they fix that
+-- Also added in distance column & removed columns used to calculate it
+SELECT
+  * EXCEPT (start_lat, start_lng, end_lat, end_lng, lat_rad_1, lng_rad_1, lat_rad_2, lng_rad_2),
+  ROUND((6371 * ACOS((SIN(lat_rad_1)*SIN(lat_rad_2))+COS(lat_rad_1)
+  *COS(lat_rad_2)*COS(lng_rad_2-lng_rad_1))),3) AS distance
+FROM (
+  SELECT
+    *,
+    ROUND((start_lat * 2 * ACOS(-1) /360),3) AS lat_rad_1,
+    ROUND((start_lng * 2 * ACOS(-1) /360),3) AS lng_rad_1,
+    ROUND((end_lat * 2 * ACOS(-1) /360),3) AS lat_rad_2,
+    ROUND((end_lng * 2 * ACOS(-1) /360),3) AS lng_rad_2,
+  FROM `cyclistic_data.q1_data`
+)
+-- Something is wrong with the math here, the distance calculation is off
