@@ -1,5 +1,5 @@
 /* 
-Cyclistic Case Study: Initial Setup and Quarterly Join Queries
+Cyclistic Case Study: Initial Setup, Processing, & Join Queries
 */
 /*
 Q1: jan-mar, 639,424 rows
