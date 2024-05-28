@@ -153,7 +153,7 @@ FROM (
     COUNTIF(member_casual = 'member') AS member_trips,
     COUNTIF(member_casual = 'casual') AS casual_trips
   FROM
-    `magnetic-energy-424103-m2.cyclistic_data.q1_df`
+    `cyclistic_data.q1_df`
   )
   -- By weekly & membership breakdowns
 SELECT
@@ -185,7 +185,7 @@ SELECT
   (SELECT
     ROUND(AVG(duration_min),2)
   FROM
-    `magnetic-energy-424103-m2.cyclistic_data.q1_df`
+    `cyclistic_data.q1_df`
   ) AS avg_drtn_stats,
   (SELECT
     ROUND(AVG(duration_min),2)
@@ -221,3 +221,184 @@ SELECT
     member_casual = 'casual'
   ) AS casual_dist_avg
 
+-- View avg distances traveled overall and by membership type over weekdays
+SELECT
+    day_of_week,
+    ROUND(AVG(distance_km),2) AS avg_ride_distance,
+    ROUND(AVG(members),2) AS avg_member_dist,
+    ROUND(AVG(casuals),2) AS avg_casual_dist
+FROM
+    (SELECT
+      member_casual, day_of_week, distance_km, 
+      IF(member_casual = 'member', distance_km, null) AS members,
+      IF(member_casual = 'casual', distance_km, null) AS casuals
+    FROM
+    `cyclistic_data.q1_df`)
+GROUP BY
+   day_of_week
+ORDER BY
+  avg_ride_distance DESC
+-- both show that sundays have the highest avg distance traveled
+
+-- Looking at ridership stats (distance + duration) of the 3 bike types 
+SELECT
+  rideable_type,
+  ROUND(AVG(seconds)/60,2) AS avg_duration,
+  ROUND(AVG(distance),2) AS avg_distance
+FROM 
+  `cyclistic_data.q1_data` 
+GROUP BY
+  1
+LIMIT 3
+--data consistent with other avg ridership stats except for one thing:
+--the returned table showed a ridiculously high avg duration on docked_bike
+--which is only used by casual riders, so I queried just those
+SELECT
+  member_casual,
+  rideable_type,
+  ROUND(seconds/60,2) AS duration,
+  distance
+FROM
+  `cyclistic_data.q1_data`
+WHERE
+  rideable_type = 'docked_bike'
+ORDER BY
+  duration DESC
+--and found that the top 1.75% of longest duration rides on that bike type
+--show no distance traveled, either bc of the same endpoint or bc there wasn't one.
+--going to filter out records with durations > 1000 & distance = 0|null
+WITH
+no_nulls AS (
+SELECT
+  rideable_type, distance,
+  IF (duration > 1000 AND distance IS null, null, duration) AS duration  
+FROM  
+  (SELECT
+    rideable_type,
+    ROUND(seconds/60,2) AS duration,
+    distance
+  FROM
+    `cyclistic_data.q1_data`
+  WHERE
+    rideable_type = 'docked_bike'
+  ORDER BY
+    duration DESC)
+)
+SELECT 
+  rideable_type
+  ,ROUND(AVG(no_nulls.duration),2) AS avg_duration
+  ,ROUND(AVG(no_nulls.distance),2) AS avg_distance
+FROM
+  no_nulls
+WHERE
+  no_nulls.distance IS NOT null
+GROUP BY
+  rideable_type
+--this still shows a high average, but at least the empty/extreme fields aren't a factor
+--old docked_bike avg: 158.13 min, new avg: 41.37 min
+
+--Finding top stations by membership type
+--starting stations:
+SELECT
+  DISTINCT(end_station_name) AS end_station,
+  SUM(
+    CASE WHEN(ride_id = ride_id AND end_station_name = end_station_name)
+    THEN 1 ELSE 0 END) AS total_rides,
+  SUM(
+    CASE WHEN(member_casual = 'member' AND end_station_name = end_station_name)
+    THEN 1 ELSE 0 END) AS member,
+  SUM(
+    CASE WHEN(member_casual = 'casual' AND end_station_name = end_station_name)
+    THEN 1 ELSE 0 END) AS casual
+FROM
+  `cyclistic_data.q1_df`
+GROUP BY
+  end_station_name
+ORDER BY
+  total_rides DESC
+--ending stations:
+SELECT
+  DISTINCT(end_station_name) AS end_station,
+  SUM(
+    CASE WHEN(ride_id = ride_id AND end_station_name = end_station_name)
+    THEN 1 ELSE 0 END) AS total_rides,
+  SUM(
+    CASE WHEN(member_casual = 'member' AND end_station_name = end_station_name)
+    THEN 1 ELSE 0 END) AS member,
+  SUM(
+    CASE WHEN(member_casual = 'casual' AND end_station_name = end_station_name)
+    THEN 1 ELSE 0 END) AS casual
+FROM
+  `cyclistic_data.q1_df`
+GROUP BY
+  end_station_name
+ORDER BY
+  total_rides DESC
+
+--Top station combos by membership type
+SELECT
+    start_station_name, end_station_name,
+    COUNT(*) AS combo,
+    COUNTIF(member_casual='member') AS member_combo,
+    COUNTIF(member_casual='casual') AS casual_combo
+FROM 
+    `cyclistic_data.q1_df`
+WHERE
+    start_station_name = start_station_name
+    AND end_station_name = end_station_name
+    AND end_station_name IS NOT null
+    AND start_station_name IS NOT null
+GROUP BY
+    1,2
+ORDER BY
+    combo DESC
+
+--Viewing total trips by membership type with day of week and percentages
+SELECT
+  total_trips, member_trips,
+  casual_trips, trip_date, 
+  day_of_week,
+  ROUND(member_trips/total_trips,2)*100 AS member_percentage,
+  ROUND(casual_trips/total_trips,2)*100 AS casual_percentage
+FROM  (
+  SELECT
+    COUNT(ride_id) AS total_trips,
+    COUNTIF(member_casual='member') AS member_trips,
+    COUNTIF(member_casual='casual') AS casual_trips,
+    DATE(started_at) AS trip_date,
+    day_of_week
+  FROM
+    `cyclistic_data.q1_df`
+  WHERE
+    ride_id = ride_id
+  GROUP BY
+    trip_date,
+    day_of_week)
+ORDER BY
+  total_trips DESC
+
+--Using this query to see the most popular start times among riders
+SELECT
+  total_trips, member_trips,
+  casual_trips, trip_date, 
+  day_of_week, start_hour,
+  ROUND(member_trips/total_trips,2)*100 AS member_percentage,
+  ROUND(casual_trips/total_trips,2)*100 AS casual_percentage
+FROM  (
+  SELECT
+    EXTRACT(HOUR FROM started_at) AS start_hour,
+    COUNT(ride_id) AS total_trips,
+    COUNTIF(member_casual='member') AS member_trips,
+    COUNTIF(member_casual='casual') AS casual_trips,
+    DATE(started_at) AS trip_date,
+    day_of_week
+  FROM
+    `cyclistic_data.q1_df`
+  WHERE
+    ride_id = ride_id
+  GROUP BY
+    trip_date,
+    day_of_week,
+    start_hour)
+ORDER BY
+  total_trips DESC
