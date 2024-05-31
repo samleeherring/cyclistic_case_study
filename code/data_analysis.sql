@@ -34,6 +34,74 @@ GROUP BY
   member_casual
   --shows mins of 0.02 for both 
 
+#standardSQL
+CREATE TEMP FUNCTION NUMFORMAT(number FLOAT64) AS (
+  CONCAT(REGEXP_EXTRACT(cast(number as string), r'\d*\.\d{1}'), ' %')
+);
+SELECT
+  total,
+    NUMFORMAT(ROUND((total/5719877)*100,1)) AS of_all_rides,
+  pos_dist,
+    NUMFORMAT(ROUND((pos_dist/total)*100,1)) AS pos_of_total,
+  no_dist,
+    NUMFORMAT(ROUND((no_dist/total)*100,1)) AS zeros_of_total,
+  null_dist,
+    NUMFORMAT(ROUND((null_dist/total)*100,1)) AS nulls_of_total
+FROM  (
+  SELECT
+    COUNTIF(duration_min >= 45) AS total,
+    COUNTIF(duration_min >= 45 AND distance_km > 0) AS pos_dist,
+    COUNTIF(duration_min >= 45 AND distance_km = 0) AS no_dist,
+    COUNTIF(duration_min >= 45 AND distance_km IS null) AS null_dist,
+  FROM  (
+    SELECT
+      ride_id, member_casual, duration_min, distance_km
+    FROM
+      `cyclistic_data.annual_df`
+  ))
+
+--Identifying extreme outliers by distance traveled
+#standardSQL
+CREATE TEMP FUNCTION NUMFORMAT(number FLOAT64) AS (
+  CONCAT(REGEXP_EXTRACT(cast(number as string), r'\d*\.\d{1}'), ' %')
+);
+SELECT
+  subscriber_type,
+  total_trips,
+    NUMFORMAT(ROUND((total_trips/5719877)*100,1)) AS of_all_rides,
+  possible_trips,
+    NUMFORMAT(ROUND((possible_trips/total_trips)*100,1)) AS pos_of_total,
+  impossible_trips,
+    NUMFORMAT(ROUND((impossible_trips/total_trips)*100,1)) AS impos_of_total,
+  ambiguous_trips,
+    NUMFORMAT(ROUND((ambiguous_trips/total_trips)*100,1)) AS ambigs_of_total,
+  null_trips,
+    NUMFORMAT(ROUND((null_trips/total_trips)*100,1)) AS nulls_of_total
+FROM  (
+  SELECT
+    member_casual AS subscriber_type,
+    COUNT(ride_id) AS total_trips,
+    COUNTIF(km/ph > 0 AND km/ph < 32) AS possible_trips,
+    COUNTIF(km/ph >= 32) AS impossible_trips,
+    COUNTIF(km/ph = 0) AS ambiguous_trips,
+    COUNTIF(km/ph IS null) AS null_trips,
+  FROM  (
+    SELECT
+      ride_id, member_casual, 
+      distance_km AS km, 
+      duration_min/60 AS ph
+    FROM
+      `cyclistic_data.annual_df`
+    WHERE
+      duration_min >= 1
+      AND duration_min IS NOT null
+    ORDER BY
+      ph ASC
+  )
+  GROUP BY 
+    member_casual
+  ) 
+
 -- Full view of all ride durations  to glimpse outliers
 SELECT
   ride_id, member_casual, duration_min, distance_km
@@ -264,8 +332,8 @@ WHERE
   rideable_type = 'docked_bike'
 ORDER BY
   duration DESC
---and found that the top 1.75% of longest duration rides on that bike type
---show no distance traveled, either bc of the same endpoint or bc there wasn't one.
+--& found the top 1.75% of longest duration rides on that bike type show no distance traveled,
+--either bc of the same endpoint or bc there wasn't one.
 --going to filter out records with durations > 1000 & distance = 0|null
 WITH
 no_nulls AS (
@@ -354,51 +422,65 @@ ORDER BY
     combo DESC
 
 --Viewing total trips by membership type with day of week and percentages
+#standardSQL
+CREATE TEMP FUNCTION NUMFORMAT(number FLOAT64) AS (
+  CONCAT(REGEXP_EXTRACT(cast(number as string), r'\d*\.\d{1}'), ' %')
+);
 SELECT
-  total_trips, member_trips,
-  casual_trips, trip_date, 
   day_of_week,
-  ROUND(member_trips/total_trips,2)*100 AS member_percentage,
-  ROUND(casual_trips/total_trips,2)*100 AS casual_percentage
+  total_trips, member_trips,
+  casual_trips, --trip_date, 
+  NUMFORMAT(ROUND(member_trips/total_trips,5)*100) AS member_percentage,
+  NUMFORMAT(ROUND(casual_trips/total_trips,5)*100) AS casual_percentage
 FROM  (
   SELECT
     COUNT(ride_id) AS total_trips,
     COUNTIF(member_casual='member') AS member_trips,
     COUNTIF(member_casual='casual') AS casual_trips,
-    DATE(started_at) AS trip_date,
+    --DATE(started_at) AS trip_date,
     day_of_week
   FROM
     `cyclistic_data.q1_df`
   WHERE
     ride_id = ride_id
   GROUP BY
-    trip_date,
-    day_of_week)
+    day_of_week
+    --trip_date
+    )
 ORDER BY
   total_trips DESC
+-- Found that during the week, it's ~80/20, but on the weekends it approaches ~70/30
 
 --Using this query to see the most popular start times among riders
+#standardSQL
+CREATE TEMP FUNCTION NUMFORMAT(number FLOAT64) AS (
+  CONCAT(REGEXP_EXTRACT(cast(number as string), r'\d*\.\d{1}'), ' %')
+);
 SELECT
-  total_trips, member_trips,
-  casual_trips, trip_date, 
-  day_of_week, start_hour,
-  ROUND(member_trips/total_trips,2)*100 AS member_percentage,
-  ROUND(casual_trips/total_trips,2)*100 AS casual_percentage
+  start_hour,
+  --day_of_week,
+  --trip_date, 
+  total_trips, member_trips, casual_trips, 
+  NUMFORMAT(ROUND(member_trips/total_trips,5)*100) AS member_percentage,
+  NUMFORMAT(ROUND(casual_trips/total_trips,5)*100) AS casual_percentage
 FROM  (
   SELECT
+    --DATE(started_at) AS trip_date,
+    --day_of_week,
     EXTRACT(HOUR FROM started_at) AS start_hour,
     COUNT(ride_id) AS total_trips,
     COUNTIF(member_casual='member') AS member_trips,
-    COUNTIF(member_casual='casual') AS casual_trips,
-    DATE(started_at) AS trip_date,
-    day_of_week
+    COUNTIF(member_casual='casual') AS casual_trips    
   FROM
-    `cyclistic_data.q1_df`
+    `cyclistic_data.annual_df`
   WHERE
     ride_id = ride_id
   GROUP BY
-    trip_date,
-    day_of_week,
+    --day_of_week,
+    --trip_date,
     start_hour)
 ORDER BY
   total_trips DESC
+-- Here we can actually see that while members outnumber casual riders all day long,
+-- There are actually more casuals between midnight and 4:00am
+
